@@ -1,19 +1,22 @@
 #include <cstddef>
 #include <cstdlib>
 #include <string>
+//#include <iostream>
 
 #include "TreeMap.h"
+#include "HashMap.h"
 
 namespace
 {
 
 template <typename K, typename V>
-using Map = aisdi::TreeMap<K, V>;
+using Map = aisdi::HashMap<K, V>;
 
 void perfomTest()
 {
   Map<int, std::string> map;
   map[1] = "TODO";
+  //std::cout<< map[1];
 }
 
 } // namespace

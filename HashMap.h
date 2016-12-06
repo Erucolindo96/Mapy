@@ -11,8 +11,8 @@
 /*
 Zalozenia projektowe:
 
-1. HashMapa jest tablica wskazan na kubelki(byc moze wskazan typu unique_ptr) - w koncu tylko tam ich uzywamy
-2. Kubelek zawiera std::vector, ktory przechowuje elementy (pary: klucz + wartosc przechowywana)
+1. HashMapa jest tablica wskazan na vectory(typu unique_ptr) - w koncu tylko tam ich uzywamy
+2. Kubelek to std::vector, ktory przechowuje elementy (pary: klucz + wartosc przechowywana)
 3. Allokacja pary(klucz,wartosc) w haszmapie odbywa się poprzez wyliczenie hasza z klucza
     wybranie z tablicy wektora o indeksie hasha, oraz zapisanie do niego elementu
 4. Jesli w kubelku o danym hashu nie ma zadnych elementow, to unique_ptr jest niezainicjalizowany
@@ -27,80 +27,6 @@ namespace aisdi
 {
 
 
-template<typename KeyType, typename ValueType>
-struct Bucket
-{
-using pair = std::pair<const KeyType, ValueType>;
-using vector = std::vector<pair>;
-using iterator = std::vector<pair>::iterator;
-//pola
-
-    std::vector<pair> vector_bucket;
-//metody
-    Bucket(size_t n=1): vector_bucket(n)
-    {
-        //vector_bucket.resize(n);//nustalamy dlugosc poczatkowa by nie zajmowal za duzo miejsca
-    }
-
-    Bucket(const Bucket &other) : vector_bucket(other.vector_bucket)
-    {}
-
-    Bucket(const Bucket &&other) : vector_bucket(std::move(other.vector_bucket))
-    {}
-
-    Bucket& operator=(const Bucket &other)
-    {
-        if(&other == this)
-            return *this;
-        this->vector_bucket = other.vector_bucket;
-        return *this;
-    }
-
-    Bucket& operator=(const Bucket &&other)
-    {
-        vector_bucket = std::move(other.vector_bucket);
-    }
-
-    vector::iterator& returnIterOnPair(const KeyType &key) const
-    {
-        vector::iterator iter_found;
-        for( iter_found = vector_bucket.begin(); iter_found != vector_bucket.end(); ++iter)
-        {
-            if( (*iter_found).first == key)
-                break;
-        }
-        return  iter_found;
-    }
-
-    void deletePair(const KeyType & key)
-    {
-        auto iter_found = returnIterOnPair(key);
-
-        if(iter_found != vector_bucket.end())
-            vector_bucket.erase(iter_found);
-    }
-
-    void insertPair(const pair &elem)
-    {
-        vector_bucket.push_back(elem);
-    }
-    bool isEmpty()
-    {
-        return vector_bucket.empty();
-    }
-    size_t numberOfElem()
-    {
-        return vector_bucket.size();
-    }
-
-
-};
-
-
-
-
-
-
 template <typename KeyType, typename ValueType>
 class HashMap
 {
@@ -108,12 +34,13 @@ public:
   using key_type = KeyType;
   using mapped_type = ValueType;
   using value_type = std::pair<const key_type, mapped_type>;
+  using pair = std::pair<const key_type, mapped_type>;
   using size_type = std::size_t;
   using reference = value_type&;
   using const_reference = const value_type&;
   //using std::hash<KeyType> = hash;
-  using Bucket = aisdi::Bucket<KeyType, ValueType>;
-  using unique_ptr = std::unique_ptr<Bucket>;
+  using Bucket = std::vector<pair>;
+  using unique_ptr = std::unique_ptr<std::vector<pair> >;
 
 
   class ConstIterator;
@@ -122,7 +49,7 @@ public:
   using const_iterator = ConstIterator;
 private:
 
-    std::vector<unique_ptr > hash_table;//glowna tablica hashmapy, przechowujaca wskazania na kubelki
+    std::vector<unique_ptr> hash_table;//glowna tablica hashmapy, przechowujaca wskazania na kubelki
     std::hash<KeyType> hash_function;
     const size_t table_lenght;
     const size_t number_of_elem;
@@ -131,15 +58,35 @@ private:
     {
         return hash_function(key)%table_lenght;
     }
+    mapped_type& findElem(const KeyType key, unique_ptr pointer)//podajemy klucz i wskaznik na kubelek
+    {
+        auto iter = pointer -> begin();
+        auto iter_end = pointer ->end();
+        for(; iter != iter_end; ++iter)
+        {
+         if( (*iter).first == key )
+         {
+            return (*iter).second;
+         }
+        }
 
+        return nullptr;
+    }
+    typename std::vector<std::pair<KeyType, ValueType> >::const_iterator findIterToElem(const KeyType key, unique_ptr pointer)//podajemy klucz i wskazanie na kubelek
+    {
+        auto iter = pointer ->begin();
+        auto iter_end = pointer ->end();
+        for(; iter != iter_end;++iter)
+        {
+            if( (*iter).first == key )
+                return iter;
+        }
+        return iter_end();
+    }
 
 public:
-  HashMap(size_t map_lenght = 1024) : table_lenght(map_lenght), number_of_elem(0), hash_table(map_lenght)
-  {
-    //table_lenght = map_lenght;
-    //hash_table.resize(table_lenght, nullptr);//pusta hash_table o zadanej dlugosci
-
-  }
+  HashMap(size_t map_lenght = 10000) : hash_table(map_lenght), hash_function(), table_lenght(map_lenght), number_of_elem(0)
+  {}
 
   HashMap(std::initializer_list<value_type> list)
   {
@@ -151,6 +98,7 @@ public:
   {
     table_lenght = other.table_lenght;
     number_of_elem = other.number_of_elem;
+    hash_table.resize(table_lenght);
     for(size_t i = 0; i < table_lenght; ++i)
     {
         if(other.hash_table[i].get() != nullptr)//jesli other.unique_ptr - zainicjowany
@@ -169,7 +117,11 @@ public:
   {
     table_lenght = other.table_lenght;
     number_of_elem = other.number_of_elem;
-    hash_table = std::move(other.hash_table);
+    hash_table = std::move(other.hash_table);//byc moze nalezalo by przeniesc po kolei kazdy unique_ptr
+
+    other.table_lenght = 0;
+    other.number_of_elem = 0;
+    other.hash_table.resize(0);
     //chyba wszystko
   }
 
@@ -199,9 +151,14 @@ public:
   {
     if(&other == this)
         return *this;
+
     table_lenght = other.table_lenght;
     number_of_elem = other.number_of_elem;
-    hash_table = std::move(other.hash_table);
+    hash_table = std::move(other.hash_table);//byc moze trzeba po kolei przenosic unique_ptry
+
+    other.table_lenght = 0;
+    other.number_of_elem = 0;
+    other.hash_table.resize(0);
     return *this;
   }
 
@@ -215,24 +172,56 @@ public:
 
   mapped_type& operator[](const key_type& key)
   {
-    size_t hash = hash_function(key);
-    if(hash_table[hash] == nullptr)//jezeli nie stworzono jeszcze kubelka - to go tworzymy
-        hash_table[hash] = unique_ptr(new Bucket);
+    size_t hashed_key = generateHash(key);
+    if(hash_table[hashed_key] == nullptr)//jezeli nie stworzono jeszcze kubelka - to go tworzymy
+        hash_table[hashed_key] = unique_ptr(new Bucket);
+    auto iter = hash_table[hashed_key] -> begin();
+    auto iter_end = hash_table[hashed_key] ->end();
+    for(; iter != iter_end; ++iter)
+    {
+        if((*iter).first == key)
+        {
+            return (*iter).second;//referencje do elementu przechowywanego
+        }
+    }
+    //nalezy rozszerzyc kubelem o jedno miejsce
+    size_t lenght = hash_table[hashed_key] ->size();
+    hash_table[hashed_key] -> resize(lenght + 1);
+    iter = hash_table[hashed_key] ->end();
+    --iter;
+    return (*iter).second;
+    //zwravamy ostatni element - w poprzsedniej linijce stworzony
 
-    throw std::runtime_error("TODO");
 
-  }
+
+    }
 
   const mapped_type& valueOf(const key_type& key) const
   {
-    (void)key;
-    throw std::runtime_error("TODO");
+    size_t hashed_key = generateHash(key);
+    if(hash_table[hashed_key] == nullptr)
+        throw std::out_of_range("HashMap::valueOf(Key) - Object of this key doesn't exist");
+
+    const mapped_type& returned = findElem(key);
+    if( returned == nullptr)
+        throw std::out_of_range("HashMap::valueOf(Key) - Object of this key doesn't exist");
+
+    return returned;
+
   }
 
   mapped_type& valueOf(const key_type& key)
   {
-    (void)key;
-    throw std::runtime_error("TODO");
+    size_t hashed_key = generateHash(key);
+    if(hash_table[hashed_key] == nullptr)
+        throw std::out_of_range("HashMap::valueOf(Key) - Object of this key doesn't exist");
+
+    mapped_type& returned = findElem(key);
+    if( returned == nullptr)
+        throw std::out_of_range("HashMap::valueOf(Key) - Object of this key doesn't exist");
+
+    return returned;
+
   }
 
   const_iterator find(const key_type& key) const
@@ -249,8 +238,19 @@ public:
 
   void remove(const key_type& key)
   {
-    (void)key;
-    throw std::runtime_error("TODO");
+    size_t hashed_key = generateHash(key);
+    if(hash_table[hashed_key] == nullptr)//jesli nie ma kubelka o danym kluczu
+        throw std::out_of_range("HashMap::remove(Key) - Object of this key doesn't exist");
+    auto iter = findIterToElem(key);
+    if(iter == hash_table[hashed_key] -> end())
+        throw std::out_of_range("HashMap::remove(Key) - Object of this key doesn't exist");
+    hash_table[hashed_key] ->erase(iter);//kasujemy element o naszym kluczu
+
+    //jesli wektor nie ma zadnych elementow - kasujemy unique_ptra do niego
+    if(hash_table[hashed_key] ->size() == 0)
+    {
+        hash_table[hashed_key].reset();
+    }
   }
 
   void remove(const const_iterator& it)
@@ -261,7 +261,11 @@ public:
 
   size_type getSize() const
   {
-    throw std::runtime_error("TODO");
+    return table_lenght;
+  }
+  size_type getNumberElem() const
+  {
+    return number_of_elem;
   }
 
   bool operator==(const HashMap& other) const
@@ -277,7 +281,7 @@ public:
 
   iterator begin()
   {
-    throw std::runtime_error("TODO");
+
   }
 
   iterator end()
@@ -309,6 +313,15 @@ public:
 template <typename KeyType, typename ValueType>
 class HashMap<KeyType, ValueType>::ConstIterator
 {
+
+
+
+private:
+    HashMap<KeyType, ValueType> *map_ptr;
+    size_t bucket_num;
+    size_t in_bucket_index;
+
+
 public:
   using reference = typename HashMap::const_reference;
   using iterator_category = std::bidirectional_iterator_tag;
@@ -318,35 +331,75 @@ public:
   explicit ConstIterator()
   {}
 
-  ConstIterator(const ConstIterator& other)
+  ConstIterator(const ConstIterator& other): map_ptr(other.map_ptr),  bucket_num(other.bucket_num), in_bucket_index(other.in_bucket_index)
+  {}
+
+  ConstIterator& operator=(const ConstIterator &other)
   {
-    (void)other;
-    throw std::runtime_error("TODO");
+    if(&other == this)
+        return *this;
+    map_ptr = other.map_ptr;
+    bucket_num = other.bucket_num;
+    in_bucket_index = other.in_bucket_index;
+    return *this;
   }
 
   ConstIterator& operator++()
   {
-    throw std::runtime_error("TODO");
+  throw std::runtime_error("TODO");
+    if(bucket_num + 1 == map_ptr->table_lenght  &&  in_bucket_index + 1 == (map_ptr->hash_table[bucket_num]).size() )//gdy jestesmy w ostatnim kubelku i jego ostatnim elemencie
+        throw std::out_of_range("HashMap::ConstIterator::operator++() - iter went out of range");
+
+    if(in_bucket_index + 1 == (map_ptr->hash_table[bucket_num]).size()) //gdy jestesmy na koncu kubelka
+    {
+        ++bucket_num;
+        in_bucket_index = 0;
+        return *this;
+    }
+
+    ++in_bucket_index;
+    return *this;
   }
+
 
   ConstIterator operator++(int)
   {
-    throw std::runtime_error("TODO");
+  throw std::runtime_error("TODO");
+    ConstIterator temp = *this;
+    ++*this;//to moze zglaszac wyjatek gdy wyjdzie poza zakres - patrz operator++()
+
+    return temp;
   }
 
   ConstIterator& operator--()
   {
-    throw std::runtime_error("TODO");
+
+  throw std::runtime_error("TODO");
+    if(bucket_num == 0  && in_bucket_index == 0)
+        throw std::out_of_range("HashMapa::ConstIterator::operator-- : Iterator went out of range");
+    if(in_bucket_index == 0)
+    {
+        --bucket_num;
+        in_bucket_index = (map_ptr->hash_table[bucket_num]).size() - 1;//ostatni element w tym kubelku
+        return *this;
+    }
+
+    --in_bucket_index;
+    return *this;
   }
 
   ConstIterator operator--(int)
   {
-    throw std::runtime_error("TODO");
+
+  throw std::runtime_error("TODO");
+    ConstIterator temp = *this;
+    --*this;//to zglasza wyjatek, gdy wyjdzie poz zakres - patrz operator--()
+    return temp;
   }
 
-  reference operator*() const
+  reference operator*() const //reference - std::pair
   {
-    throw std::runtime_error("TODO");
+    return (map_ptr->hash_table[bucket_num])[in_bucket_index];
   }
 
   pointer operator->() const
@@ -356,8 +409,10 @@ public:
 
   bool operator==(const ConstIterator& other) const
   {
-    (void)other;
-    throw std::runtime_error("TODO");
+    if(map_ptr == other.map_ptr && bucket_num == other.bucket_num && in_bucket_index == other.in_bucket_index)
+        return true;
+    else
+        return false;
   }
 
   bool operator!=(const ConstIterator& other) const
@@ -379,6 +434,11 @@ public:
   Iterator(const ConstIterator& other)
     : ConstIterator(other)
   {}
+
+  Iterator& operator=(const Iterator& other)
+  {
+    return ConstIterator::operator=(other);
+  }
 
   Iterator& operator++()
   {
